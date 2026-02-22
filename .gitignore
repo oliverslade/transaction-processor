@@ -1,0 +1,21 @@
+# Build Output
+build/
+.gradle/
+.kotlin/
+out/
+
+# IDE Configuration
+.idea/
+*.iml
+*.iws
+.vscode/
+
+# Gradle Wrapper
+!gradle/wrapper/gradle-wrapper.jar
+!gradle/wrapper/gradle-wrapper.properties
+
+# Kotlin
+*.class
+
+# macOS
+.DS_Store
