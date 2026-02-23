@@ -2,8 +2,8 @@ package monzo
 
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.flow.*
-import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.flow.flatMapMerge
+import kotlinx.coroutines.flow.flow
 import java.math.BigDecimal
 
 /**
@@ -16,11 +16,10 @@ class TransactionProcessor(private val apiClient: ApiClient) {
         private const val CONCURRENCY_LIMIT = 50
     }
 
-    private data class ProcessingResult(
-        val txId: String,
-        val response: TransactionResponse? = null,
-        val errorMessage: String? = null
-    )
+    private sealed class ProcessingResult {
+        data class Success(val txId: String, val response: TransactionResponse) : ProcessingResult()
+        data class Failure(val txId: String, val errorMessage: String) : ProcessingResult()
+    }
 
     @OptIn(ExperimentalCoroutinesApi::class)
     suspend fun generateReport(): Report {
@@ -62,52 +61,51 @@ class TransactionProcessor(private val apiClient: ApiClient) {
             flow {
                 try {
                     val txResponse = apiClient.fetchTransaction(txId)
-                    emit(ProcessingResult(txId, response = txResponse))
+                    emit(ProcessingResult.Success(txId, txResponse))
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {
-                    emit(ProcessingResult(txId, errorMessage = e.message ?: "Unknown API error"))
+                    emit(ProcessingResult.Failure(txId, e.message ?: "Unknown API error"))
                 }
             }
         }
 
-        // Aggregator -> Collects details sequentially. Thread-safe Mutable map math.
         detailFlow.collect { result ->
-            if (result.errorMessage != null) {
-                failedTransactions++
-                failureLogs.add("TX ${result.txId} failed API fetch: ${result.errorMessage}")
-                return@collect
-            }
+            when (result) {
+                is ProcessingResult.Failure -> {
+                    failedTransactions++
+                    failureLogs.add("TX ${result.txId} failed API fetch: ${result.errorMessage}")
+                }
+                is ProcessingResult.Success -> {
+                    val txResponse = result.response
 
-            val txResponse = result.response!!
+                    val amount = try {
+                        BigDecimal(txResponse.amount)
+                    } catch (e: NumberFormatException) {
+                        failedTransactions++
+                        failureLogs.add("TX ${result.txId} has invalid amount format: '${txResponse.amount}'")
+                        return@collect
+                    }
 
-            val amount = try {
-                BigDecimal(txResponse.amount)
-            } catch (e: NumberFormatException) {
-                failedTransactions++
-                failureLogs.add("TX ${result.txId} has invalid amount format: '${txResponse.amount}'")
-                return@collect
-            }
+                    successfulTransactions++
 
-            // If valid, apply logic
-            successfulTransactions++
-            
-            // Track money entering the target account as a deposit
-            if (txResponse.targetAccount.isNotBlank()) {
-                totalDeposits = totalDeposits.add(amount)
-                val targetBalance = accountBalances.getOrDefault(txResponse.targetAccount, BigDecimal.ZERO)
-                accountBalances[txResponse.targetAccount] = targetBalance.add(amount)
-            }
+                    // Track money entering the target account as a deposit
+                    if (txResponse.targetAccount.isNotBlank()) {
+                        totalDeposits = totalDeposits.add(amount)
+                        val targetBalance = accountBalances.getOrDefault(txResponse.targetAccount, BigDecimal.ZERO)
+                        accountBalances[txResponse.targetAccount] = targetBalance.add(amount)
+                    }
 
-            // Track money leaving the source account as a withdrawal
-            if (txResponse.sourceAccount.isNotBlank()) {
-                totalWithdrawals = totalWithdrawals.add(amount)
-                val sourceBalance = accountBalances.getOrDefault(txResponse.sourceAccount, BigDecimal.ZERO)
-                accountBalances[txResponse.sourceAccount] = sourceBalance.subtract(amount)
+                    // Track money leaving the source account as a withdrawal
+                    if (txResponse.sourceAccount.isNotBlank()) {
+                        totalWithdrawals = totalWithdrawals.add(amount)
+                        val sourceBalance = accountBalances.getOrDefault(txResponse.sourceAccount, BigDecimal.ZERO)
+                        accountBalances[txResponse.sourceAccount] = sourceBalance.subtract(amount)
+                    }
+                }
             }
         }
 
-        // Final math output
         val netTotal = totalDeposits.subtract(totalWithdrawals)
 
         val negativeAccounts = accountBalances.entries

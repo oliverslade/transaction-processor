@@ -22,7 +22,7 @@ You are welcome to use standard libraries to handle things like making HTTP requ
 
 To run this application and its test suite from scratch, you will need Java and Gradle.
 
-1. Install Java using [SDKMAN!](https://sdkman.io/) (`sdk install java`), via Homebrew on macOS (`brew install openjdk@17`), or by downloading it directly from Adoptium/Oracle.
+1. Install Java 21+ using [SDKMAN!](https://sdkman.io/) (`sdk install java 21-open`), via Homebrew on macOS (`brew install openjdk@21`), or by downloading it directly from Adoptium/Oracle.
 2. Install Gradle using [SDKMAN!](https://sdkman.io/) (`sdk install gradle`), or via Homebrew (`brew install gradle`).
 
 *(Note: If you have Java installed, you can skip installing Gradle globally. The included `./gradlew` wrapper script will automatically download and configure the exact Gradle version required by the project).*

@@ -11,7 +11,7 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Assertions.*
 import java.math.BigDecimal
 
-class AppTest {
+class TransactionProcessorTest {
 
     private lateinit var mockWebServer: MockWebServer
     private lateinit var processor: TransactionProcessor
